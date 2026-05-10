@@ -1,0 +1,62 @@
+{
+  "BDT_Baseline": {
+    "failure_rate_mean": 0.59125,
+    "failure_rate_std": 0.30582850813632284,
+    "failure_rate_ci95": [
+      0.0,
+      0.9166666666666666
+    ],
+    "cost_mean": 393.93939755784896,
+    "cost_std": 206.86938763999936
+  },
+  "Robust_Only": {
+    "failure_rate_mean": 0.43416666666666665,
+    "failure_rate_std": 0.32077813377958153,
+    "failure_rate_ci95": [
+      0.0,
+      0.875
+    ],
+    "cost_mean": 272.62508054322257,
+    "cost_std": 201.53939887844103
+  },
+  "Myopic_POMDP": {
+    "failure_rate_mean": 0.416125,
+    "failure_rate_std": 0.3287043985060471,
+    "failure_rate_ci95": [
+      0.0,
+      0.875
+    ],
+    "cost_mean": 261.07087598766293,
+    "cost_std": 207.2901829951927
+  },
+  "DAPP": {
+    "failure_rate_mean": 0.09520833333333334,
+    "failure_rate_std": 0.07610043391247297,
+    "failure_rate_ci95": [
+      0.0,
+      0.2916666666666667
+    ],
+    "cost_mean": 118.93833821061669,
+    "cost_std": 61.82815550279288
+  },
+  "RDM_Conservative": {
+    "failure_rate_mean": 0.0,
+    "failure_rate_std": 0.0,
+    "failure_rate_ci95": [
+      0.0,
+      0.0
+    ],
+    "cost_mean": 35.71281032627735,
+    "cost_std": 2.6263468995488632
+  },
+  "Unified_Framework": {
+    "failure_rate_mean": 0.0,
+    "failure_rate_std": 0.0,
+    "failure_rate_ci95": [
+      0.0,
+      0.0
+    ],
+    "cost_mean": 34.16021951322454,
+    "cost_std": 0.0
+  }
+}

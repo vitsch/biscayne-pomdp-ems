@@ -1,0 +1,102 @@
+{
+  "data_sources": {
+    "precipitation": "Open-Meteo ERA5 reanalysis, Miami-Dade (2000\u20132024)",
+    "sea_level": "NOAA Tides & Currents, Key West station 8724580",
+    "enso_oni": "NOAA CPC Oceanic Ni\u00f1o Index (monthly)",
+    "obs_proxy": "Physics-based: obs = sigmoid(\u03b1\u00b7SLR_z + \u03b2\u00b7(\u2212precip_z) + \u03b3\u00b7ONI_z)"
+  },
+  "calibrated_params": {
+    "recharge_rates": {
+      "DRY": -0.08074151540462449,
+      "STATIONARY": 0.013213516651696315,
+      "WET": 0.08
+    },
+    "sigma_pre": 0.2043,
+    "sigma_post": 0.169,
+    "transition_matrix": [
+      [
+        0.7431389713679606,
+        0.256855619285623,
+        5.409346416480552e-06
+      ],
+      [
+        0.20093128172598795,
+        0.6461440662150992,
+        0.1529246520589129
+      ],
+      [
+        0.08672983398551562,
+        0.2725685538873935,
+        0.640701612127091
+      ]
+    ],
+    "regime_occupancy": {
+      "DRY": 0.41,
+      "STATIONARY": 0.43,
+      "WET": 0.16
+    }
+  },
+  "mc_results": {
+    "BDT_Baseline": {
+      "failure_rate_mean": 0.59125,
+      "failure_rate_std": 0.30582850813632284,
+      "failure_rate_ci95": [
+        0.0,
+        0.9166666666666666
+      ],
+      "cost_mean": 393.93939755784896,
+      "cost_std": 206.86938763999936
+    },
+    "Robust_Only": {
+      "failure_rate_mean": 0.43416666666666665,
+      "failure_rate_std": 0.32077813377958153,
+      "failure_rate_ci95": [
+        0.0,
+        0.875
+      ],
+      "cost_mean": 272.62508054322257,
+      "cost_std": 201.53939887844103
+    },
+    "Myopic_POMDP": {
+      "failure_rate_mean": 0.416125,
+      "failure_rate_std": 0.3287043985060471,
+      "failure_rate_ci95": [
+        0.0,
+        0.875
+      ],
+      "cost_mean": 261.07087598766293,
+      "cost_std": 207.2901829951927
+    },
+    "DAPP": {
+      "failure_rate_mean": 0.09520833333333334,
+      "failure_rate_std": 0.07610043391247297,
+      "failure_rate_ci95": [
+        0.0,
+        0.2916666666666667
+      ],
+      "cost_mean": 118.93833821061669,
+      "cost_std": 61.82815550279288
+    },
+    "RDM_Conservative": {
+      "failure_rate_mean": 0.0,
+      "failure_rate_std": 0.0,
+      "failure_rate_ci95": [
+        0.0,
+        0.0
+      ],
+      "cost_mean": 35.71281032627735,
+      "cost_std": 2.6263468995488632
+    },
+    "Unified_Framework": {
+      "failure_rate_mean": 0.0,
+      "failure_rate_std": 0.0,
+      "failure_rate_ci95": [
+        0.0,
+        0.0
+      ],
+      "cost_mean": 34.16021951322454,
+      "cost_std": 0.0
+    }
+  },
+  "n_proxy_months": 298
+}

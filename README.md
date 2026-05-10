@@ -41,10 +41,10 @@ requirements.txt
 pip install -r requirements.txt
 
 cd biscayne
-python biscayne_main.py --experiment dapp_final --seed 42 --n_trials 1000
+python biscayne_main.py --mc-trials 1000 --seed 42
 ```
 
-Expected output (`results/dapp_final/mc_results.json`):
+Expected output (`results/mc_results.json`):
 
 | Strategy | Failure rate | Cost |
 |---|---|---|

@@ -72,6 +72,19 @@ COST_MONITOR = 1.5
 COST_BARRIER = 20.0
 COST_FAILURE = 50.0
 
+# Water-demand target and unmet-demand (shortfall) cost. Community demand is
+# represented by the MEDIUM extraction rate; pumping below it incurs a
+# shortfall penalty proportional to the deficit, so that reduced pumping is a
+# genuine risk-reducing *trade-off* (cheaper extraction, higher depletion
+# safety, but at the cost of unmet demand) rather than a free-lunch dominant
+# choice. DEMAND_SHORTFALL_WEIGHT is set so that, absent any failure risk,
+# MEDIUM (cost 2.5, no shortfall) is cheaper than LOW (cost 1.0 + shortfall
+# 100*(0.03-0.01)=2.0 -> 3.0 total): a modest 0.5-unit premium for the
+# precautionary reduction, small enough to be overturned by depletion risk
+# once the failure cost (50.0) becomes material.
+DEMAND_TARGET = PUMP_RATE["MEDIUM"]
+DEMAND_SHORTFALL_WEIGHT = 100.0
+
 # ── Physical model functions ───────────────────────────────────────────────────
 
 def salinity_mean_model(h: float, model: str, tipped: bool = False) -> float:
@@ -123,12 +136,45 @@ def update_beliefs_step(pi_r, pi_m, h, obs, sigma, recharge,
 
 # ── Reward function ────────────────────────────────────────────────────────────
 
+def shortfall_cost(action):
+    deficit = max(0.0, DEMAND_TARGET - PUMP_RATE[action])
+    return DEMAND_SHORTFALL_WEIGHT * deficit
+
+
 def reward_fn(action, failed, monitor=False, barrier=False):
-    r = -COST_PUMP[action]
+    r = -COST_PUMP[action] - shortfall_cost(action)
     if monitor:   r -= COST_MONITOR
     if barrier:   r -= COST_BARRIER
     if failed:    r -= COST_FAILURE
     return r
+
+
+def rollout_pump_value(pi_r, act, h, recharge, barrier_built, T_horizon=6):
+    """Expected T_horizon-step discounted value of sustaining pumping level
+    `act` for the full horizon, marginalised over the regime belief pi_r.
+    A one-step lookahead cannot detect gradual depletion risk (a single
+    step's extraction is small relative to the head buffer, so LOW and
+    MEDIUM are both "safe" one step ahead even when repeated MEDIUM pumping
+    would deplete the head over several steps); evaluating a sustained
+    T_horizon-step policy, matching the convention already used by
+    satisficing_check/_rollout_value/option_value_raw, makes pump-level
+    selection genuinely non-myopic and gives it a real, risk-sensitive
+    trade-off against the extraction/shortfall cost. Once the barrier is
+    built, failure is physically impossible regardless of h, so the
+    depletion-risk term is correctly suppressed."""
+    pump = PUMP_RATE[act]
+    v = 0.0
+    for ri, rp in enumerate(pi_r):
+        if rp == 0.0:
+            continue
+        h_sim = h
+        cum = 0.0
+        for step in range(T_horizon):
+            h_sim = np.clip(h_sim + recharge[REGIMES[ri]] - pump, 0.05, 1.0)
+            failed_sim = (not barrier_built) and (h_sim <= H_CRIT)
+            cum += GAMMA**step * reward_fn(act, failed_sim)
+        v += rp * cum
+    return v
 
 
 # ── Satisficing check ──────────────────────────────────────────────────────────
@@ -149,13 +195,36 @@ def satisficing_check(pi_r, pi_m, h, recharge, rng, delta=DELTA,
 
 # ── VoI estimate ───────────────────────────────────────────────────────────────
 
-def voi_estimate(pi_r, pi_m, h, obs, sigma, recharge, rng, n_samples=30):
-    """Myopic expected reduction in uncertainty value from one new observation."""
-    v_current = sum(
-        pi_r[ri] * pi_m[mi] * reward_fn("LOW",
-            np.clip(h + recharge[REGIMES[ri]] - PUMP_RATE["LOW"], 0.05, 1.0) <= H_CRIT)
-        for ri in range(len(REGIMES)) for mi in range(len(MODELS))
-    )
+def _rollout_value(pi_r, pi_m, h, recharge, T_horizon):
+    """T_horizon-step discounted cumulative reward under the fixed LOW-pumping
+    reference policy (matching option_value_raw's convention), expected over the
+    (regime, model) belief. This is \\hat V(b) in Eq. 5, evaluated by exact
+    enumeration over the 3x3 regime-model grid rather than by sampling, since
+    the grid is small and enumeration is exact and cheap."""
+    v = 0.0
+    for ri, rp in enumerate(pi_r):
+        for mi, mp in enumerate(pi_m):
+            if rp * mp == 0.0:
+                continue
+            h_sim = h
+            cum = 0.0
+            for step in range(T_horizon):
+                h_sim = np.clip(h_sim + recharge[REGIMES[ri]] - PUMP_RATE["LOW"], 0.05, 1.0)
+                failed_sim = h_sim <= H_CRIT
+                cum += GAMMA**step * reward_fn("LOW", failed_sim)
+            v += rp * mp * cum
+    return v
+
+
+def voi_estimate(pi_r, pi_m, h, obs, sigma, recharge, rng, n_samples=20, T_horizon=6):
+    """Non-myopic value of information (Eq. 5): VoI(a,b_t) = E_o[V(tau(b_t,a,o))]
+    - V(b_t), approximated by sampling n_samples future observations and
+    evaluating a T_horizon-step rollout value \\hat V (via _rollout_value) under
+    the updated belief at each sample, rather than a one-step reward. This
+    matches the non-myopic VoI defined in Eq. 5 and used in Proposition 2,
+    replacing an earlier one-step (myopic) reward-difference estimator."""
+    v_current = _rollout_value(pi_r, pi_m, h, recharge, T_horizon)
+
     v_post = 0.0
     for _ in range(n_samples):
         obs_s = float(rng.normal(obs, sigma))
@@ -166,21 +235,24 @@ def voi_estimate(pi_r, pi_m, h, obs, sigma, recharge, rng, n_samples=30):
         log_m = np.array([log_lik_model(obs_s, h, mod, sigma) for mod in MODELS])
         log_m -= log_m.max()
         pm2 = pi_m * np.exp(log_m); pm2 /= pm2.sum()
-        v2 = sum(
-            pr2[ri] * pm2[mi] * reward_fn("LOW",
-                np.clip(h + recharge[REGIMES[ri]] - PUMP_RATE["LOW"], 0.05, 1.0) <= H_CRIT)
-            for ri in range(len(REGIMES)) for mi in range(len(MODELS))
-        )
-        v_post += v2
-    return max(0.0, v_post / n_samples - v_current)
+        v_post += _rollout_value(pr2, pm2, h, recharge, T_horizon)
+    v_post /= n_samples
+    return max(0.0, v_post - v_current)
 
 
 # ── Option value ───────────────────────────────────────────────────────────────
 
 def option_value_raw(pi_r, h, recharge, T_horizon=6):
-    """Returns raw OV (can be negative → barrier commit is optimal)."""
+    """Returns raw OV (can be negative → barrier commit is optimal). The
+    committed-barrier branch assumes MEDIUM pumping post-commitment --
+    cost-minimising once the barrier eliminates failure risk, matching the
+    actual action-selection logic in run_strategy_unified (rollout_pump_value
+    with barrier_built=True correctly prefers MEDIUM once risk is nullified).
+    The delay branch assumes LOW pumping -- the cautious reference policy
+    used consistently elsewhere (satisficing_check, VoI rollout) for risk
+    assessment while still unprotected by a barrier."""
     v_commit = -COST_BARRIER + sum(
-        GAMMA**t * reward_fn("LOW", False) for t in range(T_horizon))
+        GAMMA**t * reward_fn("MEDIUM", False) for t in range(T_horizon))
     v_delay = 0.0
     for ri, rp in enumerate(pi_r):
         h_sim = h; cum = 0.0
@@ -310,6 +382,7 @@ def run_strategy_unified(regime_seq, recharge, sigma_pre, sigma_post,
     h = H_INIT; cum_r = 0.0; n_fail = 0; tipped = False
     pi_r = pi_regime_0.copy(); pi_m = pi_model_0.copy()
     barrier_built = False
+    commit_step = None; first_failure_step = None
 
     for t, regime in enumerate(regime_seq):
         sigma = sigma_post if t >= T_monitor else sigma_pre
@@ -320,24 +393,34 @@ def run_strategy_unified(regime_seq, recharge, sigma_pre, sigma_post,
         voi = voi_estimate(pi_r, pi_m, h, obs, sigma, recharge, rng) if sat else 0.0
         ov_raw = option_value_raw(pi_r, h, recharge) if not barrier_built else 0.0
 
-        # Action selection
+        # Action selection: lam*voi is conditioned on the monitoring action,
+        # since monitoring is the only action that acquires additional
+        # information in this environment (VoI is a property of *acquiring*
+        # information, not of pump level). The mu*OV bonus is intentionally
+        # NOT added here: it is already correctly applied, conditioned on the
+        # barrier action specifically, by the separate build_barrier trigger
+        # below (matching Eq. 7's a=a_B indicator) -- adding it again here
+        # unconditionally would apply the real-options bonus to every action,
+        # not just the barrier action.
         best_score = -np.inf; best_action = "LOW"; use_monitor = False
         for act in ACTIONS:
+            if not sat and act == "HIGH":
+                continue
             for mon in [False, True]:
-                score = (-COST_PUMP[act]
-                         + (-COST_MONITOR if mon else 0.0)
-                         + lam * voi
-                         + mu * max(0.0, ov_raw))
-                # Conservative bias: satisficing failure forces at most MEDIUM
-                if not sat and act == "HIGH":
-                    continue
+                score = rollout_pump_value(pi_r, act, h, recharge, barrier_built)
+                if mon:
+                    score += -COST_MONITOR + lam * voi
                 if score > best_score:
                     best_score = score; best_action = act; use_monitor = mon
 
-        # Commit barrier if option value of delay is negative
+        # Commit barrier if option value of delay is negative (Proposition 3:
+        # OV(b_t) <= 0 is the mu-independent optimality condition; mu scales
+        # the value contribution in the Bellman decomposition, not the sign
+        # of this condition)
         build_barrier = (not barrier_built) and (ov_raw < 0.0)
         if build_barrier:
             barrier_built = True
+            commit_step = t
 
         pump   = PUMP_RATE[best_action]
         h_new  = np.clip(h + recharge[regime] - pump, 0.05, 1.0)
@@ -345,6 +428,7 @@ def run_strategy_unified(regime_seq, recharge, sigma_pre, sigma_post,
         # Barrier prevents physical intrusion regardless of h
         failed = (h_new <= H_CRIT) and (not barrier_built)
         if failed and not tipped: tipped = True
+        if failed and first_failure_step is None: first_failure_step = t
 
         cum_r += GAMMA**t * reward_fn(best_action, failed, use_monitor, build_barrier)
         if failed: n_fail += 1
@@ -354,7 +438,9 @@ def run_strategy_unified(regime_seq, recharge, sigma_pre, sigma_post,
 
     return {"cum_reward": cum_r, "failures": n_fail,
             "failure_rate": n_fail / T,
-            "barrier_built": barrier_built}
+            "barrier_built": barrier_built,
+            "commit_step": commit_step,
+            "first_failure_step": first_failure_step}
 
 
 # ── DAPP benchmark strategy ───────────────────────────────────────────────────
@@ -384,6 +470,7 @@ def run_strategy_dapp(regime_seq, recharge, sigma_pre, sigma_post,
     barrier_built = False
     action = "MEDIUM"
     consec_low = 0; consec_high = 0
+    commit_step = None; first_failure_step = None
 
     for t, regime in enumerate(regime_seq):
         sigma = sigma_post if t >= T_monitor else sigma_pre
@@ -396,6 +483,7 @@ def run_strategy_dapp(regime_seq, recharge, sigma_pre, sigma_post,
         # Pathway triggers (one-way commitments — DAPP pathways are irreversible)
         if not barrier_built and consec_high >= consec_needed:
             barrier_built = True
+            commit_step = t
         if action == "MEDIUM" and consec_low >= consec_needed:
             action = "LOW"
 
@@ -403,6 +491,7 @@ def run_strategy_dapp(regime_seq, recharge, sigma_pre, sigma_post,
         h_new  = np.clip(h + recharge[regime] - pump, 0.05, 1.0)
         failed = (h_new <= H_CRIT) and (not barrier_built)
         if failed and not tipped: tipped = True
+        if failed and first_failure_step is None: first_failure_step = t
 
         # Charge the barrier cost exactly once — at the step it is first committed
         # (consec_high just reached consec_needed for the first time)
@@ -412,7 +501,8 @@ def run_strategy_dapp(regime_seq, recharge, sigma_pre, sigma_post,
         h = h_new
 
     return {"cum_reward": cum_r, "failures": n_fail,
-            "failure_rate": n_fail / T, "barrier_built": barrier_built}
+            "failure_rate": n_fail / T, "barrier_built": barrier_built,
+            "commit_step": commit_step, "first_failure_step": first_failure_step}
 
 
 # ── RDM-Conservative benchmark strategy ───────────────────────────────────────
@@ -444,6 +534,7 @@ def run_strategy_rdm_conservative(regime_seq, recharge, sigma_pre, sigma_post,
     h = H_INIT; cum_r = 0.0; n_fail = 0; tipped = False
     barrier_built = False
     action = "MEDIUM"
+    commit_step = None; first_failure_step = None
 
     for t, regime in enumerate(regime_seq):
         sigma = sigma_post if t >= T_monitor else sigma_pre
@@ -455,18 +546,21 @@ def run_strategy_rdm_conservative(regime_seq, recharge, sigma_pre, sigma_post,
         if not barrier_built and h < h_barrier_threshold:
             barrier_built = True
             charge_barrier = True
+            commit_step = t
 
         pump   = PUMP_RATE[action]
         h_new  = np.clip(h + recharge[regime] - pump, 0.05, 1.0)
         failed = (h_new <= H_CRIT) and (not barrier_built)
         if failed and not tipped: tipped = True
+        if failed and first_failure_step is None: first_failure_step = t
 
         cum_r += GAMMA**t * reward_fn(action, failed, False, charge_barrier)
         if failed: n_fail += 1
         h = h_new
 
     return {"cum_reward": cum_r, "failures": n_fail,
-            "failure_rate": n_fail / T, "barrier_built": barrier_built}
+            "failure_rate": n_fail / T, "barrier_built": barrier_built,
+            "commit_step": commit_step, "first_failure_step": first_failure_step}
 
 
 # ── Experiment A: Belief tracking on 24-year proxy sequence ───────────────────
@@ -568,7 +662,7 @@ def experiment_B(trans_matrix, recharge, sigma_pre, sigma_post,
 def experiment_C(trans_matrix, recharge, sigma_pre, sigma_post,
                  n_trials=200, T=24, seed=123):
     delta_vals  = [0.05, 0.10, 0.20, 0.30]
-    lambda_vals = [0.5,  1.0,  2.0,  4.0]
+    lambda_vals = [0.5,  1.0,  1.5,  2.0]
     pi_r0 = np.array([0.50, 0.35, 0.15])
     pi_m0 = np.array([0.40, 0.40, 0.20])
     regime_prior = np.array([0.41, 0.43, 0.16])

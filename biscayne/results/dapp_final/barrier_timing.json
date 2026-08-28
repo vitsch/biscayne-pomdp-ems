@@ -1,0 +1,26 @@
+{
+  "DAPP": {
+    "deployment_rate": 0.838,
+    "mean_commit_step": 9.911694510739856,
+    "std_commit_step": 5.210997343121334,
+    "pct_late_commitment_of_deployed": 0.9880668257756563,
+    "n_deployed": 419,
+    "n_trials": 500
+  },
+  "RDM_Conservative": {
+    "deployment_rate": 0.902,
+    "mean_commit_step": 6.800443458980045,
+    "std_commit_step": 5.396484014119966,
+    "pct_late_commitment_of_deployed": 0.0,
+    "n_deployed": 451,
+    "n_trials": 500
+  },
+  "Unified_Framework": {
+    "deployment_rate": 1.0,
+    "mean_commit_step": 0.0,
+    "std_commit_step": 0.0,
+    "pct_late_commitment_of_deployed": 0.0,
+    "n_deployed": 500,
+    "n_trials": 500
+  }
+}

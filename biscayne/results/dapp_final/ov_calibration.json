@@ -1,0 +1,8 @@
+{
+  "n_trajectories": 500,
+  "V_notB_b0": -67.98709115624999,
+  "V_notB_b0_std": 60.46822481109705,
+  "V_B_b0": -33.24540546875,
+  "OV_b0": -34.74168568749999,
+  "proactive_commitment_optimal": true
+}

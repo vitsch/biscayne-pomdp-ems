@@ -1,0 +1,7 @@
+{
+  "n_trials": 500,
+  "failure_rate_mean": 0.0,
+  "failure_rate_clopper_pearson_upper95": 0.007350610051907784,
+  "cost_mean": 56.1028637227641,
+  "cost_std": 0.4774494782858028
+}

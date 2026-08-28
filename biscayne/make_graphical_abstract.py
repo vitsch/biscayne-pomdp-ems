@@ -231,7 +231,7 @@ callout_ax.add_patch(mpatches.FancyBboxPatch(
     boxstyle='round,pad=0.02',
     facecolor='#FFEBEE', edgecolor=C['unified'], linewidth=1.8))
 callout_ax.text(0.5, 0.67,
-                '0.0% failure  ·  91% lower cost vs BDT',
+                '0.0% failure  ·  86% lower cost vs BDT',
                 ha='center', va='center', fontsize=10, fontweight='bold',
                 color=C['unified'])
 callout_ax.text(0.5, 0.26,
@@ -255,7 +255,7 @@ labels = [
     'RDM-Cons.  (Lempert 2006)',
     'Unified Framework',
 ]
-rates  = [59.1, 43.4, 41.6,  9.5,   0.0,   0.0]
+rates  = [58.6, 43.5, 54.3,  9.8,   0.0,   0.0]
 colors = [C['bdt'], C['robust'], C['myopic'], C['dapp'], C['rdm'], C['unified']]
 
 y = np.arange(len(labels))
